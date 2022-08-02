@@ -23,14 +23,14 @@ contract TrustedForwarder {
 
     event NonceUpdated(uint256 indexed blockNumber, uint256 indexed nonce);
 
-    string constant SERVICE = "service.invalid";
-    string constant STATEMENT = "I accept the ServiceOrg Terms of Service: https://service.invalid/tos";
-    string constant URI = "https://service.invalid/login";
-    string constant VERSION = "1";
+    string public SERVICE;
+    string public STATEMENT;
+    string public URI;
+    string public VERSION;
 
     Checkpoints.History private _nonces;
 
-    mapping(address => bytes32) public revoked;
+    mapping(address => mapping(bytes32 => bool)) public revoked;
 
     // cannot have an immutable string
     string public CHAIN_ID;
@@ -46,52 +46,66 @@ contract TrustedForwarder {
         bytes data;
     }
 
-    constructor(address diceRollerAddress) {
-      CHAIN_ID = Strings.toString(block.chainid);
-      diceRoller = IDiceRoller(diceRollerAddress);
-      updateNonce();
+    constructor(
+        address diceRollerAddress,
+        string memory _service,
+        string memory _statement,
+        string memory _uri,
+        string memory _version
+    ) {
+        CHAIN_ID = Strings.toString(block.chainid);
+        SERVICE = _service;
+        STATEMENT = _statement;
+        URI = _uri;
+        VERSION = _version;
+        diceRoller = IDiceRoller(diceRollerAddress);
+        updateNonce();
     }
 
     // anyone can call this at any time, because randomness comes from the chain
     function updateNonce() public returns (bool) {
-      // checkpoints must fit into a uint224 for some reason  
-      uint256 rnd = uint224(uint256(diceRoller.getRandom()));
-      _nonces.push(rnd);
+        // checkpoints must fit into a uint224 for some reason
+        uint256 rnd = uint224(uint256(diceRoller.getRandom()));
+        _nonces.push(rnd);
 
-      emit NonceUpdated(block.number, rnd);
-      return true;
+        emit NonceUpdated(block.number, rnd);
+        return true;
     }
 
     function getNonceAt(uint256 blockNumber) public view returns (uint256) {
-      return _nonces.getAtBlock(blockNumber);
+        return _nonces.getAtBlock(blockNumber);
     }
 
-    function verify(address from, uint256 issuedAt, bytes calldata signature) public view returns (bool) {
-        bytes memory stringToSign = abi.encodePacked(
-          SERVICE,
-          " wants you to sign in with your Ethereum account: ",
-          Strings.toHexString(from),
-          "\n\n",
-          STATEMENT,
-          "\n\n",
-          "URI: ", URI,
-          "\n",
-          "Version: ", VERSION,
-          "\n",
-          "Chain Id: ", CHAIN_ID,
-          "\n",
-          "Nonce: ", Strings.toHexString(getNonceAt(issuedAt)),
-          "\n",
-          "Issued At: ", Strings.toString(issuedAt),
-          "\n",
-          "Request ID: ", Strings.toHexString(msg.sender)
+    function revoke(
+        address from,
+        address relayer,
+        uint256 issuedAt,
+        bytes calldata signature
+    ) external returns (bool) {
+        require(
+            (msg.sender == from || msg.sender == relayer),
+            "TrustedForwarder: Must be sender or relayer"
         );
-        bytes32 msgHash = ECDSA.toEthSignedMessageHash(stringToSign);
+        if (msg.sender == relayer) {
+            require(
+                verify(from, msg.sender, issuedAt, signature),
+                "TrustedForwarder: Invalid revoke"
+            );
+        }
+        revoked[from][_hashForToken(from, relayer, issuedAt)] = true;
+        return true;
+    }
+
+    function verify(
+        address from,
+        address relayer,
+        uint256 issuedAt,
+        bytes calldata signature
+    ) public view returns (bool) {
+        bytes32 msgHash = _hashForToken(from, relayer, issuedAt);
+        require(!revoked[from][msgHash], "TrustedForwarder: Token Revoked");
         // console.log('sol string to sign: "', string(stringToSign));
         bool result = ECDSA.recover(msgHash, signature) == from;
-        if (!result) {
-          revert("woops");
-        }
         return result;
     }
 
@@ -100,11 +114,15 @@ contract TrustedForwarder {
         payable
         returns (bool, bytes memory)
     {
-        require(verify(req.from, req.issuedAt, signature), "TrustedForwarder: signature does not match request");
-
-        (bool success, bytes memory returndata) = req.to.call{gas: req.gas, value: req.value}(
-            abi.encodePacked(req.data, req.from)
+        require(
+            verify(req.from, msg.sender, req.issuedAt, signature),
+            "TrustedForwarder: signature does not match request"
         );
+
+        (bool success, bytes memory returndata) = req.to.call{
+            gas: req.gas,
+            value: req.value
+        }(abi.encodePacked(req.data, req.from));
 
         // Validate that the relayer has sent enough gas for the call.
         // See https://ronan.eth.link/blog/ethereum-gas-dangers/
@@ -119,5 +137,38 @@ contract TrustedForwarder {
         }
 
         return (success, returndata);
+    }
+
+    function _hashForToken(
+        address from,
+        address relayer,
+        uint256 issuedAt
+    ) private view returns (bytes32) {
+        bytes memory stringToSign = abi.encodePacked(
+            SERVICE,
+            " wants you to sign in with your Ethereum account: ",
+            Strings.toHexString(from),
+            "\n\n",
+            STATEMENT,
+            "\n\n",
+            "URI: ",
+            URI,
+            "\n",
+            "Version: ",
+            VERSION,
+            "\n",
+            "Chain Id: ",
+            CHAIN_ID,
+            "\n",
+            "Nonce: ",
+            Strings.toHexString(getNonceAt(issuedAt)),
+            "\n",
+            "Issued At: ",
+            Strings.toString(issuedAt),
+            "\n",
+            "Request ID: ",
+            Strings.toHexString(relayer)
+        );
+        return ECDSA.toEthSignedMessageHash(stringToSign);
     }
 }

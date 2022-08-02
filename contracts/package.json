@@ -1,11 +1,16 @@
 {
-  "name": "hardhat-project",
+  "name": "skale-relayer-contracts",
+  "version": "0.0.1",
+  "files": [
+    "contracts"
+  ],
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^1.0.2",
-    "hardhat": "^2.10.1"
-  },
-  "dependencies": {
     "@openzeppelin/contracts": "^4.7.2",
+    "hardhat": "^2.10.1",
     "hardhat-deploy": "^0.11.12"
+  },
+  "peerDependencies": {
+    "ethers": "^5.5.0"
   }
 }
