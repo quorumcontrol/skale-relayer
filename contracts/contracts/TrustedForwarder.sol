@@ -46,6 +46,11 @@ contract TrustedForwarder {
         bytes data;
     }
 
+    struct MultiResponse {
+        bool success;
+        bytes returnData;
+    }
+
     constructor(
         address diceRollerAddress,
         string memory _service,
@@ -107,6 +112,22 @@ contract TrustedForwarder {
         // console.log('sol string to sign: "', string(stringToSign));
         bool result = ECDSA.recover(msgHash, signature) == from;
         return result;
+    }
+
+    function multiExecute(
+        ForwardRequest[] calldata requests,
+        bytes calldata signature
+    ) public payable returns (MultiResponse[] memory responses) {
+      uint256 len = requests.length;
+      responses = new MultiResponse[](len);
+      for (uint256 i = 0; i < len; i++) {
+        (bool success, bytes memory resp) = execute(requests[i], signature);
+        responses[i] = MultiResponse({
+          success: success,
+          returnData: resp
+        });
+      }
+      return responses;
     }
 
     function execute(ForwardRequest calldata req, bytes calldata signature)

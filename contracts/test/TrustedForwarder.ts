@@ -40,7 +40,7 @@ describe("TrustedForwarder", function () {
     });
   });
 
-  describe('execute', () => {
+  describe('relaying transactions', () => {
     it('should relay a transaction', async () => {
       const { trustedForwarder, deployer, alice, forwarderTester } = await loadFixture(deployForwarder);
       const { signature, issuedAt } = await createToken(trustedForwarder, alice, deployer)
@@ -61,6 +61,36 @@ describe("TrustedForwarder", function () {
         issuedAt,
       }, signature)).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
     })
+
+    it('should relay multiple transactions', async () => {
+      const { trustedForwarder, deployer, alice, forwarderTester } = await loadFixture(deployForwarder);
+      const { signature, issuedAt } = await createToken(trustedForwarder, alice, deployer)
+
+      const relayTxOne = await forwarderTester.populateTransaction.testSender()
+      const relayTxTwo = await forwarderTester.populateTransaction.testSender()
+
+      const gas = await alice.estimateGas({ ...relayTxOne, from: alice.address })
+
+      await expect(trustedForwarder.multiExecute([
+        {
+          to: forwarderTester.address,
+          from: alice.address,
+          data: relayTxOne.data!,
+          value: 0,
+          gas: gas.mul(120).div(100).toNumber(),
+          issuedAt,
+        },
+        {
+          to: forwarderTester.address,
+          from: alice.address,
+          data: relayTxTwo.data!,
+          value: 0,
+          gas: gas.mul(120).div(100).toNumber(),
+          issuedAt,
+        },
+      ], signature)).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+    })
+
   })
 
   describe('revoke', () => {
