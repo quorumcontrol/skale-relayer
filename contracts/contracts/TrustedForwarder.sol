@@ -5,9 +5,8 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts/utils/Checkpoints.sol";
-import "hardhat/console.sol";
-import "./interfaces/IDiceRoller.sol";
+import "./Noncer.sol";
+// import "hardhat/console.sol";
 
 /**
  * @dev Simple minimal forwarder to be used together with an ERC2771 compatible contract. See {ERC2771Context}.
@@ -19,23 +18,18 @@ import "./interfaces/IDiceRoller.sol";
  */
 contract TrustedForwarder {
     // using ECDSA for bytes32;
-    using Checkpoints for Checkpoints.History;
-
-    event NonceUpdated(uint256 indexed blockNumber, uint256 indexed nonce);
 
     string public SERVICE;
     string public STATEMENT;
     string public URI;
     string public VERSION;
 
-    Checkpoints.History private _nonces;
-
     mapping(address => mapping(bytes32 => bool)) public revoked;
+
+    Noncer immutable noncer;
 
     // cannot have an immutable string
     string public CHAIN_ID;
-
-    IDiceRoller immutable diceRoller;
 
     struct ForwardRequest {
         address from;
@@ -46,39 +40,23 @@ contract TrustedForwarder {
         bytes data;
     }
 
-    struct MultiResponse {
-        bool success;
-        bytes returnData;
-    }
-
     constructor(
-        address diceRollerAddress,
+        address noncerAddress,
         string memory _service,
         string memory _statement,
         string memory _uri,
         string memory _version
     ) {
+        noncer = Noncer(noncerAddress);
         CHAIN_ID = Strings.toString(block.chainid);
         SERVICE = _service;
         STATEMENT = _statement;
         URI = _uri;
         VERSION = _version;
-        diceRoller = IDiceRoller(diceRollerAddress);
-        updateNonce();
-    }
-
-    // anyone can call this at any time, because randomness comes from the chain
-    function updateNonce() public returns (bool) {
-        // checkpoints must fit into a uint224 for some reason
-        uint256 rnd = uint224(uint256(diceRoller.getRandom()));
-        _nonces.push(rnd);
-
-        emit NonceUpdated(block.number, rnd);
-        return true;
     }
 
     function getNonceAt(uint256 blockNumber) public view returns (uint256) {
-        return _nonces.getAtBlock(blockNumber);
+      return noncer.getNonceAt(blockNumber);
     }
 
     function revoke(
@@ -117,14 +95,16 @@ contract TrustedForwarder {
     function multiExecute(
         ForwardRequest[] calldata requests,
         bytes calldata signature
-    ) public payable returns (MultiResponse[] memory responses) {
+    ) public payable returns (bool[] memory, bytes[] memory) {
         uint256 len = requests.length;
-        responses = new MultiResponse[](len);
+        bool[] memory successes = new bool[](len);
+        bytes[] memory responses = new bytes[](len);
         for (uint256 i = 0; i < len; i++) {
             (bool success, bytes memory resp) = execute(requests[i], signature);
-            responses[i] = MultiResponse({success: success, returnData: resp});
+            successes[i] = success;
+            responses[i] = resp;
         }
-        return responses;
+        return (successes, responses);
     }
 
     function execute(ForwardRequest calldata req, bytes calldata signature)
@@ -168,23 +148,17 @@ contract TrustedForwarder {
             Strings.toHexString(from),
             "\n\n",
             STATEMENT,
-            "\n\n",
-            "URI: ",
+            "\n\nURI: ",
             URI,
-            "\n",
-            "Version: ",
+            "\nVersion: ",
             VERSION,
-            "\n",
-            "Chain Id: ",
+            "\nChain Id: ",
             CHAIN_ID,
-            "\n",
-            "Nonce: ",
+            "\nNonce: ",
             Strings.toHexString(getNonceAt(issuedAt)),
-            "\n",
-            "Issued At: ",
+            "\nIssued At: ",
             Strings.toString(issuedAt),
-            "\n",
-            "Request ID: ",
+            "\nRequest ID: ",
             Strings.toHexString(relayer)
         );
         return ECDSA.toEthSignedMessageHash(stringToSign);

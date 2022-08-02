@@ -18,9 +18,12 @@ describe("TrustedForwarder", function () {
     const DiceRoller = await ethers.getContractFactory('TestDiceRoller')
     const diceRoller = await DiceRoller.deploy()
 
+    const Noncer = await ethers.getContractFactory('Noncer')
+    const noncer = await Noncer.deploy(diceRoller.address)
+
     const factory = await ethers.getContractFactory("TrustedForwarder");
     const trustedForwarder = await factory.deploy(
-      diceRoller.address,
+      noncer.address,
       SERVICE,
       STATEMENT,
       URI,
@@ -71,24 +74,25 @@ describe("TrustedForwarder", function () {
 
       const gas = await alice.estimateGas({ ...relayTxOne, from: alice.address })
 
-      await expect(trustedForwarder.multiExecute([
-        {
-          to: forwarderTester.address,
-          from: alice.address,
-          data: relayTxOne.data!,
-          value: 0,
-          gas: gas.mul(120).div(100).toNumber(),
-          issuedAt,
-        },
-        {
-          to: forwarderTester.address,
-          from: alice.address,
-          data: relayTxTwo.data!,
-          value: 0,
-          gas: gas.mul(120).div(100).toNumber(),
-          issuedAt,
-        },
-      ], signature)).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+      await expect(trustedForwarder.multiExecute(
+        [
+          {
+            to: forwarderTester.address,
+            from: alice.address,
+            data: relayTxOne.data!,
+            value: 0,
+            gas: gas.mul(120).div(100).toNumber(),
+            issuedAt,
+          },
+          {
+            to: forwarderTester.address,
+            from: alice.address,
+            data: relayTxTwo.data!,
+            value: 0,
+            gas: gas.mul(120).div(100).toNumber(),
+            issuedAt,
+          },
+        ], signature)).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
     })
 
   })

@@ -20,9 +20,13 @@ describe("KasumahRelayer", function () {
     const DiceRoller = await ethers.getContractFactory('TestDiceRoller')
     const diceRoller = await DiceRoller.deploy()
 
+
+    const Noncer = await ethers.getContractFactory('Noncer')
+    const noncer = await Noncer.deploy(diceRoller.address)
+
     const factory = await ethers.getContractFactory("TrustedForwarder");
     const trustedForwarder = await factory.deploy(
-      diceRoller.address,
+      noncer.address,
       SERVICE,
       STATEMENT,
       URI,
@@ -31,6 +35,7 @@ describe("KasumahRelayer", function () {
 
     const ForwarderTester = await ethers.getContractFactory("ForwarderTester")
     const forwarderTester = await ForwarderTester.deploy(trustedForwarder.address)
+
     return { trustedForwarder, deployer, alice, forwarderTester }
   }
 
