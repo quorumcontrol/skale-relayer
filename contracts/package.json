@@ -2,13 +2,20 @@
   "name": "skale-relayer-contracts",
   "version": "0.0.1",
   "files": [
-    "contracts"
+    "contracts",
+    "lib"
   ],
+  "main": "lib/src/index.js",
+  "scripts": {
+    "build": "tsc --build tsconfig.npm.json"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^1.0.2",
     "@openzeppelin/contracts": "^4.7.2",
     "hardhat": "^2.10.1",
-    "hardhat-deploy": "^0.11.12"
+    "hardhat-deploy": "^0.11.12",
+    "kasumah-relay-wrapper": "^0.0.48",
+    "typescript": "^4.7.4"
   },
   "peerDependencies": {
     "ethers": "^5.5.0"

@@ -7,8 +7,8 @@ export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, us
     trustedForwarder.STATEMENT(),
     trustedForwarder.URI(),
     trustedForwarder.VERSION(),
-    user.getChainId(),
-    user.provider!.getBlockNumber()
+    relayer.getChainId(),
+    relayer.provider!.getBlockNumber()
   ])
   const issuedAt = blockNumber - 1
   const nonce = await trustedForwarder.getNonceAt(issuedAt)

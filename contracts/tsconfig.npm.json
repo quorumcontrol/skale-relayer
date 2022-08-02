@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Node",
+
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "lib",
+    "resolveJsonModule": true,
+    "declaration": true
+  },
+
+  "include": ["src", "typechain-types"]
+}
