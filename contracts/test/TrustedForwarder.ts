@@ -1,7 +1,7 @@
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { createToken } from '../src'
+import { getBytesAndCreateToken } from '../src'
 
 const SERVICE = "service.invalid";
 const STATEMENT = "I accept the ServiceOrg Terms of Service: https://service.invalid/tos";
@@ -38,7 +38,7 @@ describe("TrustedForwarder", function () {
   describe("verify", function () {
     it("should verify a proper signature", async function () {
       const { trustedForwarder, deployer, alice } = await loadFixture(deployForwarder);
-      const { signature, issuedAt } = await createToken(trustedForwarder, alice, deployer)
+      const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer)
       expect(await trustedForwarder.verify(alice.address, deployer.address, issuedAt, signature)).to.be.true
     });
   });
@@ -46,7 +46,7 @@ describe("TrustedForwarder", function () {
   describe('relaying transactions', () => {
     it('should relay a transaction', async () => {
       const { trustedForwarder, deployer, alice, forwarderTester } = await loadFixture(deployForwarder);
-      const { signature, issuedAt } = await createToken(trustedForwarder, alice, deployer)
+      const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer)
 
       const relayTx = await forwarderTester.populateTransaction.testSender()
       if (!relayTx.data || !relayTx.to) {
@@ -67,7 +67,7 @@ describe("TrustedForwarder", function () {
 
     it('should relay multiple transactions', async () => {
       const { trustedForwarder, deployer, alice, forwarderTester } = await loadFixture(deployForwarder);
-      const { signature, issuedAt } = await createToken(trustedForwarder, alice, deployer)
+      const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer)
 
       const relayTxOne = await forwarderTester.populateTransaction.testSender()
       const relayTxTwo = await forwarderTester.populateTransaction.testSender()
@@ -101,7 +101,7 @@ describe("TrustedForwarder", function () {
     const contractsAndToken = async () => {
       const contracts = await loadFixture(deployForwarder);
       const { trustedForwarder, deployer, alice, forwarderTester } = contracts
-      const tokenResp = await createToken(trustedForwarder, alice, deployer)
+      const tokenResp = await getBytesAndCreateToken(trustedForwarder, alice, deployer)
       return {
         ...contracts,
         ...tokenResp,

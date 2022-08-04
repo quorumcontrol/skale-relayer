@@ -1,7 +1,17 @@
 import { TrustedForwarder } from "../typechain-types"
-import { Signer } from 'ethers'
+import { BytesLike, Signer } from 'ethers'
 
-export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer) {
+export interface PreTokenData {
+  stringToSign: BytesLike
+  issuedAt: number
+}
+
+export interface Token {
+  signature: BytesLike
+  issuedAt: number
+}
+
+export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer):Promise<PreTokenData> {
   const [service, statement, uri, version, chainId, blockNumber] = await Promise.all([
     trustedForwarder.SERVICE(),
     trustedForwarder.STATEMENT(),
@@ -36,10 +46,22 @@ export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, us
   }
 }
 
-export async function createToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer) {
-  const { stringToSign, issuedAt } = await bytesToSignForToken(trustedForwarder, user, relayer)
+/**
+ * createToken does not do any https calls out except for the sign message, this makes it useable for mobile browsers
+ * as they will often pop the app store if there are any extraneous requests besides the direct call to wallet connect.
+ * see: https://github.com/MetaMask/metamask-mobile/pull/4167
+ * @param preTokenData
+ * @param user 
+ * @returns a sequence of bytes
+ */
+export async function createToken({ stringToSign, issuedAt }:PreTokenData, user:Signer):Promise<Token> {
   return {
     signature: await user.signMessage(stringToSign),
     issuedAt,
   }
+}
+
+export async function getBytesAndCreateToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer) {
+  const preTokenData = await bytesToSignForToken(trustedForwarder, user, relayer)
+  return createToken(preTokenData, user)
 }

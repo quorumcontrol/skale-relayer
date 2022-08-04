@@ -1,31 +1,24 @@
-import { BytesLike, Contract, ContractTransaction, PopulatedTransaction, Signer } from "ethers";
+import { Contract, ContractTransaction, PopulatedTransaction, Signer } from "ethers";
 import { TrustedForwarder } from "../typechain-types";
 import { Relayer } from "kasumah-relay-wrapper/dist/src/relayers";
-import { createToken } from "./tokenCreator";
+import { Token } from "./tokenCreator";
 
 class KasumahRelayer implements Relayer {
 
   forwarder: TrustedForwarder
   user: Signer
   relayer: Signer
-  token?: Promise<{signature: BytesLike, issuedAt: number}>
+  token: Token
 
-  constructor(forwarder: TrustedForwarder, relayer: Signer, user: Signer) {
+  constructor(forwarder: TrustedForwarder, relayer: Signer, user: Signer, token:Token) {
     this.forwarder = forwarder
     this.user = user
     this.relayer = relayer
+    this.token = token
   }
 
-  getToken() {
-    if (this.token) {
-      return this.token
-    }
-    this.token = createToken(this.forwarder, this.user, this.relayer)
-    return this.token
-  }
-  
   async multisend(txs:PopulatedTransaction[]):Promise<ContractTransaction> {
-    const { issuedAt, signature } = await this.getToken()
+    const { issuedAt, signature } = this.token
     const userAddress = await this.user.getAddress()
     const forwardRequests:TrustedForwarder.ForwardRequestStruct[] = txs.map((tx) => {
       return {
@@ -54,7 +47,7 @@ class KasumahRelayer implements Relayer {
       }]
     }
 
-    const { issuedAt, signature } = await this.getToken()
+    const { issuedAt, signature } = this.token
 
     const relayTx = await to.populateTransaction[funcName](...newArgs)
 
