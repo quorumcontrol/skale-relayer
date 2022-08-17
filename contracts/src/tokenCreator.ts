@@ -1,5 +1,6 @@
 import { TrustedForwarder } from "../typechain-types"
-import { BytesLike, Signer } from 'ethers'
+import { BigNumber, BigNumberish, BytesLike, Signer } from 'ethers'
+import { keccak256 } from "ethers/lib/utils"
 
 export interface PreTokenData {
   stringToSign: BytesLike
@@ -11,7 +12,7 @@ export interface Token {
   issuedAt: number
 }
 
-export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer):Promise<PreTokenData> {
+export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer, sessionExpiry?:BigNumberish):Promise<PreTokenData> {
   const [service, statement, uri, version, chainId, blockNumber] = await Promise.all([
     trustedForwarder.SERVICE(),
     trustedForwarder.STATEMENT(),
@@ -23,7 +24,7 @@ export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, us
   const issuedAt = blockNumber - 1
   const nonce = await trustedForwarder.getNonceAt(issuedAt)
 
-  const stringToSign = service +
+  let stringToSign = service +
     " wants you to sign in with your Ethereum account: " +
     (await user.getAddress()).toLowerCase() +
     "\n\n" +
@@ -40,6 +41,13 @@ export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, us
     "Issued At: " + issuedAt.toString(10) +
     "\n" +
     "Request ID: " + (await relayer.getAddress()).toLowerCase()
+
+  if (sessionExpiry && BigNumber.from(sessionExpiry).gt(0)) {
+    stringToSign =
+      stringToSign +
+      "\nSession Length: " + BigNumber.from(sessionExpiry).toString()
+  }
+
   return {
     stringToSign,
     issuedAt
@@ -61,7 +69,7 @@ export async function createToken({ stringToSign, issuedAt }:PreTokenData, user:
   }
 }
 
-export async function getBytesAndCreateToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer) {
-  const preTokenData = await bytesToSignForToken(trustedForwarder, user, relayer)
+export async function getBytesAndCreateToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer, sessionExpiry?: BigNumberish) {
+  const preTokenData = await bytesToSignForToken(trustedForwarder, user, relayer, sessionExpiry)
   return createToken(preTokenData, user)
 }

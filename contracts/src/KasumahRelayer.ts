@@ -27,6 +27,7 @@ class KasumahRelayer implements Relayer {
         data: tx.data!,
         gas: tx.gasLimit || 9500000,
         value: tx.value || 0,
+        sessionExpiry: 0,
         issuedAt
       }
     })
@@ -57,6 +58,7 @@ class KasumahRelayer implements Relayer {
       data: relayTx.data!,
       gas: newArgs.slice(-1)[0].gasLimit,
       value: newArgs.slice(-1)[0].value || 0,
+      sessionExpiry: 0,
       issuedAt
     }, signature, {
       gasLimit: 3_000_000

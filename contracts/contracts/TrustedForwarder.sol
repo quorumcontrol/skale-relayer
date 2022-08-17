@@ -25,6 +25,7 @@ contract TrustedForwarder {
     string public VERSION;
 
     mapping(address => mapping(bytes32 => bool)) public revoked;
+    mapping(bytes32 => uint256) public blockOfLastTokenUsage;
 
     Noncer immutable noncer;
 
@@ -37,6 +38,7 @@ contract TrustedForwarder {
         uint256 value;
         uint256 gas;
         uint256 issuedAt;
+        uint256 sessionExpiry;
         bytes data;
     }
 
@@ -59,23 +61,18 @@ contract TrustedForwarder {
       return noncer.getNonceAt(blockNumber);
     }
 
+    // revoke is a special case where want to revoke a hash of another auth token
+    // but we want to allow relayers to do it
     function revoke(
-        address from,
-        address relayer,
-        uint256 issuedAt,
-        bytes calldata signature
+        ForwardRequest calldata req, bytes calldata signature
     ) external returns (bool) {
+        (bool verifySuccess,) = verify(req.from, msg.sender, req.issuedAt, req.sessionExpiry, signature);
         require(
-            (msg.sender == from || msg.sender == relayer),
-            "TrustedForwarder: Must be sender or relayer"
+            verifySuccess,
+            "TrustedForwarder: signature does not match request"
         );
-        if (msg.sender == relayer) {
-            require(
-                verify(from, msg.sender, issuedAt, signature),
-                "TrustedForwarder: Invalid revoke"
-            );
-        }
-        revoked[from][_hashForToken(from, relayer, issuedAt)] = true;
+
+        revoked[req.from][bytes32(req.data)] = true;
         return true;
     }
 
@@ -83,13 +80,26 @@ contract TrustedForwarder {
         address from,
         address relayer,
         uint256 issuedAt,
+        uint256 sessionExpiry,
         bytes calldata signature
-    ) public view returns (bool) {
-        bytes32 msgHash = _hashForToken(from, relayer, issuedAt);
-        require(!revoked[from][msgHash], "TrustedForwarder: Token Revoked");
+    ) public view returns (bool result, bytes32 msgHash) {
+        msgHash = hashForToken(from, relayer, issuedAt, sessionExpiry);
+        if (revoked[from][msgHash]) {
+            return (false, msgHash);
+        }
+        if (sessionExpiry > 0) {
+            uint256 lastUsed = blockOfLastTokenUsage[msgHash];
+            if (lastUsed == 0) {
+                lastUsed = issuedAt;
+            }
+            if (block.number > (lastUsed + sessionExpiry)) {
+                // revert(string(abi.encodePacked("block number is too high: ", Strings.toString(lastUsed), " ", Strings.toString(block.number), " exp: ", Strings.toString(sessionExpiry))));
+                return (false, msgHash);
+            }
+        }
         // console.log('sol string to sign: "', string(stringToSign));
-        bool result = ECDSA.recover(msgHash, signature) == from;
-        return result;
+        result = ECDSA.recover(msgHash, signature) == from;
+        return (result, msgHash);
     }
 
     function multiExecute(
@@ -112,10 +122,15 @@ contract TrustedForwarder {
         payable
         returns (bool, bytes memory)
     {
+        (bool verifySuccess, bytes32 msgHash) = verify(req.from, msg.sender, req.issuedAt, req.sessionExpiry, signature);
         require(
-            verify(req.from, msg.sender, req.issuedAt, signature),
+            verifySuccess,
             "TrustedForwarder: signature does not match request"
         );
+
+        if (req.sessionExpiry > 0) {
+            blockOfLastTokenUsage[msgHash] = block.number;
+        }
 
         (bool success, bytes memory returndata) = req.to.call{
             gas: req.gas,
@@ -137,11 +152,12 @@ contract TrustedForwarder {
         return (success, returndata);
     }
 
-    function _hashForToken(
+    function hashForToken(
         address from,
         address relayer,
-        uint256 issuedAt
-    ) private view returns (bytes32) {
+        uint256 issuedAt,
+        uint256 sessionExpiry
+    ) public view returns (bytes32) {
         bytes memory stringToSign = abi.encodePacked(
             SERVICE,
             " wants you to sign in with your Ethereum account: ",
@@ -161,6 +177,13 @@ contract TrustedForwarder {
             "\nRequest ID: ",
             Strings.toHexString(relayer)
         );
+        if (sessionExpiry > 0) {
+            stringToSign = abi.encodePacked(
+                stringToSign,
+                "\nSession Length: ",
+                Strings.toString(sessionExpiry)
+            );
+        }
         return ECDSA.toEthSignedMessageHash(stringToSign);
     }
 }

@@ -1,7 +1,9 @@
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
+import { constants } from "ethers";
 import { ethers } from "hardhat";
 import { getBytesAndCreateToken } from '../src'
+import { mine } from "@nomicfoundation/hardhat-network-helpers";
 
 const SERVICE = "service.invalid";
 const STATEMENT = "I accept the ServiceOrg Terms of Service: https://service.invalid/tos";
@@ -39,7 +41,8 @@ describe("TrustedForwarder", function () {
     it("should verify a proper signature", async function () {
       const { trustedForwarder, deployer, alice } = await loadFixture(deployForwarder);
       const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer)
-      expect(await trustedForwarder.verify(alice.address, deployer.address, issuedAt, signature)).to.be.true
+      const [result] = await trustedForwarder.verify(alice.address, deployer.address, issuedAt, 0, signature)
+      expect(result).to.be.true
     });
   });
 
@@ -58,6 +61,7 @@ describe("TrustedForwarder", function () {
       await expect(trustedForwarder.execute({
         to: relayTx.to,
         from: alice.address,
+        sessionExpiry: 0,
         data: relayTx.data,
         value: 0,
         gas: gas.mul(120).div(100).toNumber(),
@@ -81,6 +85,7 @@ describe("TrustedForwarder", function () {
             from: alice.address,
             data: relayTxOne.data!,
             value: 0,
+            sessionExpiry: 0,
             gas: gas.mul(120).div(100).toNumber(),
             issuedAt,
           },
@@ -89,6 +94,7 @@ describe("TrustedForwarder", function () {
             from: alice.address,
             data: relayTxTwo.data!,
             value: 0,
+            sessionExpiry: 0,
             gas: gas.mul(120).div(100).toNumber(),
             issuedAt,
           },
@@ -100,7 +106,7 @@ describe("TrustedForwarder", function () {
   describe('revoke', () => {
     const contractsAndToken = async () => {
       const contracts = await loadFixture(deployForwarder);
-      const { trustedForwarder, deployer, alice, forwarderTester } = contracts
+      const { trustedForwarder, deployer, alice } = contracts
       const tokenResp = await getBytesAndCreateToken(trustedForwarder, alice, deployer)
       return {
         ...contracts,
@@ -108,9 +114,23 @@ describe("TrustedForwarder", function () {
       }
     }
 
-    it('should remove access for a particular token when sent by alice', async () => {
+    it("should remove access for a particular token", async () => {
       const { trustedForwarder, alice, deployer, forwarderTester, signature, issuedAt } = await loadFixture(contractsAndToken);
-      await trustedForwarder.connect(alice).revoke(alice.address, deployer.address, issuedAt, signature)
+
+      const sharedTokenParams = {
+        from: alice.address,
+        sessionExpiry: 0,
+        issuedAt,
+      }
+
+      await trustedForwarder.connect(deployer).revoke(
+        {
+          ...sharedTokenParams,
+          to: constants.AddressZero,
+          data: await trustedForwarder.hashForToken(alice.address, deployer.address, issuedAt, 0),
+          gas: 0,
+          value: 0,
+        }, signature)
 
       const relayTx = await forwarderTester.populateTransaction.testSender()
       if (!relayTx.data || !relayTx.to) {
@@ -120,18 +140,45 @@ describe("TrustedForwarder", function () {
       const gas = await alice.estimateGas({ ...relayTx, from: alice.address })
 
       await expect(trustedForwarder.execute({
+        ...sharedTokenParams,
         to: relayTx.to,
-        from: alice.address,
         data: relayTx.data,
         value: 0,
         gas: gas.mul(120).div(100).toNumber(),
-        issuedAt,
-      }, signature)).to.be.revertedWith("TrustedForwarder: Token Revoked")
+      }, signature)).to.be.revertedWith("TrustedForwarder: signature does not match request")
+    })
+  })
+
+  describe('session expiration', () => {
+
+    it("should verify a proper signature", async function () {
+      const { trustedForwarder, deployer, alice } = await loadFixture(deployForwarder);
+      const expiry = 10 // expire in 10 blocks of non use
+      const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer, expiry)
+      const [result] = await trustedForwarder.verify(alice.address, deployer.address, issuedAt, expiry, signature)
+      expect(result).to.be.true
+    });
+
+    it('should deny a signature that was created, but then not used in time', async () => {
+      const { trustedForwarder, deployer, alice } = await loadFixture(deployForwarder);
+      const expiry = 10 // expire in 10 blocks of non use
+      const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer, expiry)
+
+      await mine(11)
+
+      const [result] = await trustedForwarder.verify(alice.address, deployer.address, issuedAt, expiry, signature)
+      expect(result).to.be.false
     })
 
-    it("should remove access for a particular token when sent by relayer", async () => {
-      const { trustedForwarder, alice, deployer, forwarderTester, signature, issuedAt } = await loadFixture(contractsAndToken);
-      await trustedForwarder.connect(deployer).revoke(alice.address, deployer.address, issuedAt, signature)
+    it('should allow a signature to be continually used but expire if not used', async () => {
+      const { trustedForwarder, deployer, alice, forwarderTester } = await loadFixture(deployForwarder);
+      const expiry = 10 // expire in 10 blocks of non use
+      const { signature, issuedAt } = await getBytesAndCreateToken(trustedForwarder, alice, deployer, expiry)
+
+      await mine(7)
+
+      const [result] = await trustedForwarder.verify(alice.address, deployer.address, issuedAt, expiry, signature)
+      expect(result).to.be.true
 
       const relayTx = await forwarderTester.populateTransaction.testSender()
       if (!relayTx.data || !relayTx.to) {
@@ -140,15 +187,42 @@ describe("TrustedForwarder", function () {
 
       const gas = await alice.estimateGas({ ...relayTx, from: alice.address })
 
-      await expect(trustedForwarder.execute({
+      await expect(trustedForwarder.connect(deployer).execute({
         to: relayTx.to,
         from: alice.address,
+        sessionExpiry: expiry,
         data: relayTx.data,
         value: 0,
         gas: gas.mul(120).div(100).toNumber(),
         issuedAt,
-      }, signature)).to.be.revertedWith("TrustedForwarder: Token Revoked")
+      }, signature)).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+
+      await mine(9)
+
+      await expect(trustedForwarder.execute({
+        to: relayTx.to,
+        from: alice.address,
+        sessionExpiry: expiry,
+        data: relayTx.data,
+        value: 0,
+        gas: gas.mul(120).div(100).toNumber(),
+        issuedAt,
+      }, signature)).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+
+      await mine(10)
+
+      await expect(trustedForwarder.execute({
+        to: relayTx.to,
+        from: alice.address,
+        sessionExpiry: expiry,
+        data: relayTx.data,
+        value: 0,
+        gas: gas.mul(120).div(100).toNumber(),
+        issuedAt,
+      }, signature)).to.be.revertedWith('TrustedForwarder: signature does not match request')
+
     })
+
   })
 
 });
