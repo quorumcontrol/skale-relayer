@@ -2,8 +2,11 @@ import { Contract, ContractTransaction, PopulatedTransaction, Signer } from "eth
 import { TrustedForwarder } from "../typechain-types";
 import { Relayer } from "kasumah-relay-wrapper/dist/src/relayers";
 import { Token } from "./tokenCreator";
+import EventEmitter from "events"
 
-class KasumahRelayer implements Relayer {
+export const SIGNATURE_INVALID = 'InvalidToken'
+
+class KasumahRelayer extends EventEmitter implements Relayer {
 
   forwarder: TrustedForwarder
   user: Signer
@@ -11,6 +14,7 @@ class KasumahRelayer implements Relayer {
   token: Token
 
   constructor(forwarder: TrustedForwarder, relayer: Signer, user: Signer, token:Token) {
+    super()
     this.forwarder = forwarder
     this.user = user
     this.relayer = relayer
@@ -52,7 +56,7 @@ class KasumahRelayer implements Relayer {
 
     const relayTx = await to.populateTransaction[funcName](...newArgs)
 
-    return this.forwarder.execute({
+    const tx = this.forwarder.execute({
       to: to.address,
       from: await this.user.getAddress(),
       data: relayTx.data!,
@@ -63,6 +67,14 @@ class KasumahRelayer implements Relayer {
     }, signature, {
       gasLimit: 3_000_000
     })
+
+    tx.then((tx) => tx.wait()).catch((err) => {
+      if (err.toString().includes('signature does not match request')) {
+        this.emit(SIGNATURE_INVALID)
+      }
+    })
+
+    return tx
   }
 
 }

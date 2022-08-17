@@ -1,7 +1,7 @@
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import KasumahRelayer from "../src/KasumahRelayer";
+import KasumahRelayer, { SIGNATURE_INVALID } from "../src/KasumahRelayer";
 import { wrapContract } from 'kasumah-relay-wrapper'
 import { ForwarderTester } from "../typechain-types";
 import { getBytesAndCreateToken } from '../src/tokenCreator'
@@ -65,17 +65,15 @@ describe("KasumahRelayer", function () {
     const expiry = 10
     const token = await getBytesAndCreateToken(trustedForwarder, alice, deployer, expiry) 
     const relayer = new KasumahRelayer(trustedForwarder, deployer, alice, token)
+    return new Promise(async (resolve) => {
+      relayer.on(SIGNATURE_INVALID, resolve)
+      const wrapped = wrapContract<ForwarderTester>(forwarderTester, relayer)
 
-    const wrapped = wrapContract<ForwarderTester>(forwarderTester, relayer)
-
-    await expect(wrapped.testSender()).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
-
-    mine(10)
-
-    await expect(wrapped.testSender()).to.emit(forwarderTester, 'MessageSent').to.be.revertedWith('TrustedForwarder: signature does not match request')
-
-
-
+      await expect(wrapped.testSender()).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+  
+      mine(10)
+  
+      await expect(wrapped.testSender()).to.emit(forwarderTester, 'MessageSent').to.be.revertedWith('TrustedForwarder: signature does not match request')  
+    })
   })
-
 });
