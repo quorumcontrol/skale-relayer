@@ -5,6 +5,7 @@ import KasumahRelayer from "../src/KasumahRelayer";
 import { wrapContract } from 'kasumah-relay-wrapper'
 import { ForwarderTester } from "../typechain-types";
 import { getBytesAndCreateToken } from '../src/tokenCreator'
+import { mine } from "@nomicfoundation/hardhat-network-helpers";
 
 const SERVICE = "service.invalid";
 const STATEMENT = "I accept the ServiceOrg Terms of Service: https://service.invalid/tos";
@@ -57,6 +58,24 @@ describe("KasumahRelayer", function () {
 
     const tx = await forwarderTester.populateTransaction.testSender()
     await expect(relayer.multisend([tx, tx])).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+  })
+
+  it('works with an expiry', async () => {
+    const { trustedForwarder, deployer, alice, forwarderTester } = await loadFixture(deployForwarder);
+    const expiry = 10
+    const token = await getBytesAndCreateToken(trustedForwarder, alice, deployer, expiry) 
+    const relayer = new KasumahRelayer(trustedForwarder, deployer, alice, token)
+
+    const wrapped = wrapContract<ForwarderTester>(forwarderTester, relayer)
+
+    await expect(wrapped.testSender()).to.emit(forwarderTester, 'MessageSent').withArgs(alice.address)
+
+    mine(10)
+
+    await expect(wrapped.testSender()).to.emit(forwarderTester, 'MessageSent').to.be.revertedWith('TrustedForwarder: signature does not match request')
+
+
+
   })
 
 });

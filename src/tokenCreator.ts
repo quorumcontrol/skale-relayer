@@ -1,15 +1,16 @@
 import { TrustedForwarder } from "../typechain-types"
 import { BigNumber, BigNumberish, BytesLike, Signer } from 'ethers'
-import { keccak256 } from "ethers/lib/utils"
 
 export interface PreTokenData {
   stringToSign: BytesLike
   issuedAt: number
+  sessionExpiry?: BigNumberish
 }
 
 export interface Token {
   signature: BytesLike
   issuedAt: number
+  sessionExpiry: BigNumberish
 }
 
 export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, user: Signer, relayer: Signer, sessionExpiry?:BigNumberish):Promise<PreTokenData> {
@@ -50,7 +51,8 @@ export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, us
 
   return {
     stringToSign,
-    issuedAt
+    issuedAt,
+    sessionExpiry,
   }
 }
 
@@ -62,10 +64,11 @@ export async function bytesToSignForToken(trustedForwarder: TrustedForwarder, us
  * @param user 
  * @returns a sequence of bytes
  */
-export async function createToken({ stringToSign, issuedAt }:PreTokenData, user:Signer):Promise<Token> {
+export async function createToken({ stringToSign, issuedAt, sessionExpiry }:PreTokenData, user:Signer):Promise<Token> {
   return {
     signature: await user.signMessage(stringToSign),
     issuedAt,
+    sessionExpiry: sessionExpiry || 0
   }
 }
 
