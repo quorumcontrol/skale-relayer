@@ -1,4 +1,4 @@
-import { Contract, ContractTransaction, PopulatedTransaction, Signer } from "ethers";
+import { Contract, ContractTransaction, PayableOverrides, PopulatedTransaction, Signer } from "ethers";
 import { TrustedForwarder } from "../typechain-types";
 import { Relayer } from "kasumah-relay-wrapper/dist/src/relayers";
 import { Token } from "./tokenCreator";
@@ -21,7 +21,7 @@ class KasumahRelayer extends EventEmitter implements Relayer {
     this.token = token
   }
 
-  async multisend(txs:PopulatedTransaction[]):Promise<ContractTransaction> {
+  async multisend(txs:PopulatedTransaction[], opts?:PayableOverrides):Promise<ContractTransaction> {
     const { issuedAt, signature } = this.token
     const userAddress = await this.user.getAddress()
     const forwardRequests:TrustedForwarder.ForwardRequestStruct[] = txs.map((tx) => {
@@ -35,7 +35,7 @@ class KasumahRelayer extends EventEmitter implements Relayer {
         issuedAt
       }
     })
-    return this.forwarder.multiExecute(forwardRequests, signature)
+    return this.forwarder.multiExecute(forwardRequests, signature, opts)
   }
 
   async transmit(to:Contract, funcName:string, ...args:any):Promise<ContractTransaction> {
